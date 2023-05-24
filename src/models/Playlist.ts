@@ -1,132 +1,178 @@
-import { PlaylistDB, PlaylistModel } from "../types";
+export interface PlaylistDB {
+  id: string,
+  creator_id: string,
+  name: string,
+  likes: number,
+  dislikes: number,
+  created_at: string,
+  updated_at: string,
+  thumbnail: string
+}
+
+export interface PlaylistDBWithCreatorName {
+  id: string,
+  creator_id: string,
+  name: string,
+  likes: number,
+  dislikes: number,
+  created_at: string,
+  updated_at: string,
+  thumbnail: string,
+  creator_name: string
+}
+
+export interface PlaylistModel {
+  id: string,
+  name: string,
+  likes: number,
+  dislikes: number,
+  createdAt: string,
+  updatedAt: string,
+  thumbnail: string,
+  creator: {
+    id: string,
+    name: string
+  }
+}
+
+export interface LikeDislikeDB {
+  user_id: string,
+  playlist_id: string,
+  like: number
+}
+
+export enum PLAYLIST_LIKE {
+  ALREADY_LIKED = "ALREADY LIKED",
+  ALREADY_DISLIKED = "ALREADY DISLIKED"
+}
 
 export class Playlist {
-    constructor(
-        private id: string,
-        private name: string,
-        private thumbnail: string,
-        private likes: number,
-        private dislikes: number,
-        private createdAt: string,
-        private updatedAt: string,
-        private creatorId: string,
-        private creatorName: string,
-    ) {}
+  constructor(
+    private id: string,
+    private name: string,
+    private likes: number,
+    private dislikes: number,
+    private createdAt: string,
+    private updatedAt: string,
+    private creatorId: string,
+    private creatorName: string,
+    private thumbnail: string
+  ) { }
 
-    public getId(): string {
-        return this.id
-    }
-
-    public setId(value: string): void {
-        this.id = value
-    }
-
-    public getName(): string {
-        return this.name
-    }
-
-    public getThumbnail(): string {
-      return this.thumbnail
+  public getId(): string {
+    return this.id
   }
 
-    public setName(value: string): void {
-        this.name = value
-    }
-
-    public setThumbnail(value: string): void {
-      this.thumbnail = value
+  public setId(value: string): void {
+    this.id = value
   }
 
-    public getLikes(): number {
-        return this.likes
-    }
+  public getName(): string {
+    return this.name
+  }
 
-    public setLikes(value: number): void {
-        this.likes = value
-    }
+  public setName(value: string): void {
+    this.name = value
+  }
 
-    public addLike() {
-        this.likes += 1
-    }
+  public getLikes(): number {
+    return this.likes
+  }
 
-    public removeLike() {
-        this.likes -= 1
-    }
+  public setLikes(value: number): void {
+    this.likes = value
+  }
 
-    public addDislike() {
-        this.dislikes += 1
-    }
+  public addLike = (): void => {
+    this.likes++
+  }
 
-    public removeDislike() {
-        this.dislikes -= 1
-    }
+  public removeLike = (): void => {
+    this.likes--
+  }
 
-    public getDislikes(): number {
-        return this.dislikes
-    }
+  public getDislikes(): number {
+    return this.dislikes
+  }
 
-    public setDislikes(value: number): void {
-        this.dislikes = value
-    }
+  public setDislikes(value: number): void {
+    this.dislikes = value
+  }
 
-    public getCreatedAt(): string {
-        return this.createdAt
-    }
+  public addDislike = (): void => {
+    this.dislikes++
+  }
 
-    public setCreatedAt(value: string): void {
-        this.createdAt = value
-    }
+  public removeDislike = (): void => {
+    this.dislikes--
+  }
 
-    public getUpdatedAt(): string {
-        return this.updatedAt
-    }
+  public getCreatedAt(): string {
+    return this.createdAt
+  }
 
-    public setUpdatedAt(value: string): void {
-        this.updatedAt = value
-    }
+  public setCreatedAt(value: string): void {
+    this.createdAt = value
+  }
 
-    public getCreatorId(): string {
-        return this.creatorId
-    }
+  public getUpdatedAt(): string {
+    return this.updatedAt
+  }
 
-    public setCreatorId(value: string): void {
-        this.creatorId = value
-    }
+  public setUpdatedAt(value: string): void {
+    this.updatedAt = value
+  }
 
-    public getCreatorName(): string {
-        return this.creatorName
-    }
+  public getCreatorId(): string {
+    return this.creatorId
+  }
 
-    public setCreatorName(value: string): void {
-        this.creatorName = value
-    }
+  public setCreatorId(value: string): void {
+    this.creatorId = value
+  }
 
-    public toDBModel(): PlaylistDB {
-        return {
-            id: this.id,
-            creator_id: this.creatorId,
-            name: this.name,
-            thumbnail: this.thumbnail,
-            likes: this.likes,
-            dislikes: this.dislikes,
-            created_at: this.createdAt,
-            updated_at: this.updatedAt
-        }
-    }
+  public getCreatorName(): string {
+    return this.creatorName
+  }
 
-    public toBusinessModel(): PlaylistModel {
-        return {
-            id: this.id,
-            name: this.name,
-            thumbnail: this.thumbnail,
-            likes: this.likes,
-            dislikes: this.dislikes,
-            createdAt: this.createdAt,
-            updatedAt: this.updatedAt,
-            creator: {
-                id: this.creatorId,
-                name: this.creatorName
-            }
-        }
+  public setCreatorName(value: string): void {
+    this.creatorName = value
+  }
+
+  public getThumbnail(): string {
+    return this.thumbnail
+  }
+
+  public setThumbnail(value: string): void {
+    this.thumbnail = value
+  }
+
+  public toDBModel(): PlaylistDB {
+    return {
+      id: this.id,
+      creator_id: this.creatorId,
+      name: this.name,
+      likes: this.likes,
+      dislikes: this.dislikes,
+      created_at: this.createdAt,
+      updated_at: this.updatedAt,
+      thumbnail: this.thumbnail
     }
+  }
+
+  public toBusinessModel(): PlaylistModel {
+    return {
+      id: this.id,
+      name: this.name,
+      likes: this.likes,
+      dislikes: this.dislikes,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+      thumbnail: this.thumbnail,
+      creator: {
+        id: this.creatorId,
+        name: this.creatorName
+      }
+    }
+  }
 }

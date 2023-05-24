@@ -1,12 +1,12 @@
-import { UserDatabase } from "../database/UserDatabase"
-import { LoginInputDTO, LoginOutputDTO, SignupInputDTO, SignupOutputDTO } from "../dtos/userDTO";
+import { UserDatabase } from "../database/UserDatabase";
+import { LoginInputDTO, LoginOutputDTO } from "../dtos/user/login.dto";
+import { SignupInputDTO, SignupOutputDTO } from "../dtos/user/signup.dto";
 import { BadRequestError } from "../errors/BadRequestError";
 import { NotFoundError } from "../errors/NotFoundError";
-import { User } from "../models/User";
+import { TokenPayload, USER_ROLES, User } from "../models/User";
 import { HashManager } from "../services/HashManager";
 import { IdGenerator } from "../services/IdGenerator";
 import { TokenManager } from "../services/TokenManager";
-import { TokenPayload, UserDB, USER_ROLES } from "../types";
 
 export class UserBusiness {
   constructor(
@@ -14,57 +14,33 @@ export class UserBusiness {
     private idGenerator: IdGenerator,
     private tokenManager: TokenManager,
     private hashManager: HashManager
-  ) { }
+  ) {}
 
-  public signup = async (input: SignupInputDTO): Promise<SignupOutputDTO> => {
+  public signup = async (
+    input: SignupInputDTO
+  ): Promise<SignupOutputDTO> => {
     const { name, email, password } = input
-
-    if (typeof name !== "string") {
-      throw new BadRequestError("'name' deve ser string")
-    }
-
-    if (typeof email !== "string") {
-      throw new BadRequestError("'email' deve ser string")
-    }
-
-    if (typeof password !== "string") {
-      throw new BadRequestError("'password' deve ser string")
-    }
-
-    if (name.length < 3) {
-      throw new BadRequestError("'name' deve possuir no mínimo 3 caracteres")
-    }
-
-    if (email.length < 3 || !email.includes("@")) {
-      throw new BadRequestError("'email' deve possuir no mínimo 3 caracteres e ter @")
-    }
-
-    if (password.length < 3) {
-      throw new BadRequestError("'password' deve possuir no mínimo 3 caracteres")
-    }
-
+    
     const id = this.idGenerator.generate()
-    const hashedPassword = await this.hashManager.hash(password)
-    const role = USER_ROLES.NORMAL
-    const createdAt = new Date().toISOString()
 
-    const newUser = new User(
+    const hashedPassword = await this.hashManager.hash(password)
+    
+    const user = new User(
       id,
       name,
       email,
       hashedPassword,
-      role,
-      createdAt
+      USER_ROLES.NORMAL,
+      new Date().toISOString()
     )
 
-    const userDB = newUser.toDBModel()
-
-    await this.userDatabase.insert(userDB)
+    const userDB = user.toDBModel()
+    await this.userDatabase.insertUser(userDB)
 
     const payload: TokenPayload = {
-      id: newUser.getId(),
-      name: newUser.getName(),
-      role: newUser.getRole()
+      id: user.getId(),
+      name: user.getName(),
+      role: user.getRole()
     }
 
     const token = this.tokenManager.createToken(payload)
@@ -76,23 +52,15 @@ export class UserBusiness {
     return output
   }
 
-  public login = async (input: LoginInputDTO): Promise<LoginOutputDTO> => {
+  public login = async (
+    input: LoginInputDTO
+  ): Promise<LoginOutputDTO> => {
     const { email, password } = input
 
-    if (typeof email !== "string") {
-      throw new BadRequestError("'email' deve ser string")
-    }
-
-    if (typeof password !== "string") {
-      throw new BadRequestError("'password' deve ser string")
-    }
-
-    const userDB: UserDB | undefined = await this.userDatabase.findByEmail(email)
-
-    console.log(userDB)
+    const userDB = await this.userDatabase.findUserByEmail(email)
 
     if (!userDB) {
-      throw new NotFoundError("'email' não cadastrado")
+      throw new BadRequestError("e-mail e/ou senha inválido(s)")
     }
 
     const user = new User(
@@ -110,7 +78,7 @@ export class UserBusiness {
       .compare(password, hashedPassword)
 
     if (!isPasswordCorrect) {
-      throw new BadRequestError("'password' incorreto")
+      throw new BadRequestError("e-mail e/ou senha inválido(s)")
     }
 
     const payload: TokenPayload = {

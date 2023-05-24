@@ -1,14 +1,20 @@
-import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { PlaylistDatabase } from "../database/PlaylistDatabase";
-import { CreatePlaylistInputDTO, CreatePlaylistOutputDTO, DeletePlaylistInputDTO, EditPlaylistInputDTO, GetPlaylistsInputDTO, GetPlaylistsOutputDTO, LikeOrDislikePlaylistInputDTO } from "../dtos/playlistDTO";
-import { BadRequestError } from "../errors/BadRequestError";
+import { CreatePlaylistInputDTO, CreatePlaylistOutputDTO } from "../dtos/playlist/createPlaylist.dto";
+import { DeletePlaylistInputDTO, DeletePlaylistOutputDTO } from "../dtos/playlist/deletePlaylist.dto";
+import { EditPlaylistInputDTO, EditPlaylistOutputDTO } from "../dtos/playlist/editPlaylist.dto";
+import { GetPlaylistsInputDTO, GetPlaylistsOutputDTO } from "../dtos/playlist/getPlaylists.dto";
+import { LikeOrDislikePlaylistInputDTO, LikeOrDislikePlaylistOutputDTO } from "../dtos/playlist/likeOrDislikePlaylist.dto";
+import { ForbiddenError } from "../errors/ForbiddenError";
 import { NotFoundError } from "../errors/NotFoundError";
-import { Playlist } from "../models/Playlist";
+import { UnauthorizedError } from "../errors/UnauthorizedError";
+import { LikeDislikeDB, PLAYLIST_LIKE, Playlist } from "../models/Playlist";
+import { USER_ROLES } from "../models/User";
 import { bucketName, s3 } from "../s3";
 import { IdGenerator } from "../services/IdGenerator";
 import { TokenManager } from "../services/TokenManager";
-import { LikeDislikeDB, PlaylistWithCreatorDB, PLAYLIST_LIKE, USER_ROLES } from "../types";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { BadRequestError } from "../errors/BadRequestError";
 
 export class PlaylistBusiness {
   constructor(
@@ -17,39 +23,74 @@ export class PlaylistBusiness {
     private tokenManager: TokenManager
   ) { }
 
+  public createPlaylist = async (
+    input: CreatePlaylistInputDTO
+  ): Promise<CreatePlaylistOutputDTO> => {
+    const { name, token, thumbnail } = input
+
+    const payload = this.tokenManager.getPayload(token)
+
+    if (!payload) {
+      throw new UnauthorizedError()
+    }
+
+    const id = this.idGenerator.generate()
+    const thumbnailId = this.idGenerator.generate()
+
+    await s3.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Body: thumbnail.buffer,
+      Key: thumbnailId,
+      ContentType: thumbnail.mimetype
+    }))
+
+    const playlist = new Playlist(
+      id,
+      name,
+      0,
+      0,
+      new Date().toISOString(),
+      new Date().toISOString(),
+      payload.id,
+      payload.name,
+      thumbnailId
+    )
+
+    const playlistDB = playlist.toDBModel()
+    await this.playlistDatabase.insertPlaylist(playlistDB)
+
+    const output: CreatePlaylistOutputDTO = undefined
+
+    return output
+  }
+
   public getPlaylists = async (
     input: GetPlaylistsInputDTO
   ): Promise<GetPlaylistsOutputDTO> => {
     const { token } = input
 
-    if (token === undefined) {
-      throw new BadRequestError("token ausente")
-    }
-
     const payload = this.tokenManager.getPayload(token)
 
-    if (payload === null) {
-      throw new BadRequestError("token inválido")
+    if (!payload) {
+      throw new UnauthorizedError()
     }
 
-    const playlistsWithCreatorsDB: PlaylistWithCreatorDB[] =
-      await this.playlistDatabase
-        .getPlaylistsWithCreators()
-
+    const playlistsDBwithCreatorName =
+      await this.playlistDatabase.getPlaylistsWithCreatorName()
 
     const playlists = []
 
-    for (let playlistWithCreatorDB of playlistsWithCreatorsDB) {
+    for (let playlistWithCreatorName of playlistsDBwithCreatorName) {
       const playlist = new Playlist(
-        playlistWithCreatorDB.id,
-        playlistWithCreatorDB.name,
-        playlistWithCreatorDB.thumbnail,
-        playlistWithCreatorDB.likes,
-        playlistWithCreatorDB.dislikes,
-        playlistWithCreatorDB.created_at,
-        playlistWithCreatorDB.updated_at,
-        playlistWithCreatorDB.creator_id,
-        playlistWithCreatorDB.creator_name
+        playlistWithCreatorName.id,
+        playlistWithCreatorName.name,
+        playlistWithCreatorName.likes,
+        playlistWithCreatorName.dislikes,
+        playlistWithCreatorName.created_at,
+        playlistWithCreatorName.updated_at,
+        playlistWithCreatorName.creator_id,
+        playlistWithCreatorName.creator_name,
+        playlistWithCreatorName.thumbnail
       )
 
       const url = await getSignedUrl(s3, new GetObjectCommand({
@@ -67,205 +108,144 @@ export class PlaylistBusiness {
     return output
   }
 
-  public createPlaylist = async (
-    input: CreatePlaylistInputDTO
-  ): Promise<CreatePlaylistOutputDTO> => {
-    const { token, name, thumbnail } = input
-
-    if (token === undefined) {
-      throw new BadRequestError("token ausente")
-    }
-
-    const payload = this.tokenManager.getPayload(token)
-
-    if (payload === null) {
-      throw new BadRequestError("token inválido")
-    }
-
-    if (typeof name !== "string") {
-      throw new BadRequestError("'name' deve ser string")
-    }
-
-    if (name.length < 3) {
-      throw new BadRequestError("'name' deve possuir pelo menos 3 caracteres")
-    }
-
-    if (thumbnail == undefined) {
-      throw new BadRequestError("'thumbnail' obrigatório")
-    }
-
-    const postId = this.idGenerator.generate()
-    const createdAt = new Date().toISOString()
-    const updatedAt = new Date().toISOString()
-    const creatorId = payload.id
-    const creatorName = payload.name
-    const thumbnailId = this.idGenerator.generate()
-
-    await s3.send(new PutObjectCommand({
-      Bucket: bucketName,
-      Body: thumbnail.buffer,
-      Key: thumbnailId,
-      ContentType: thumbnail.mimetype
-    }))
-
-    const playlist = new Playlist(
-      postId,
-      name,
-      thumbnailId,
-      0,
-      0,
-      createdAt,
-      updatedAt,
-      creatorId,
-      creatorName
-    )
-
-    const playlistDB = playlist.toDBModel()
-
-    await this.playlistDatabase.insert(playlistDB)
-
-    const response: CreatePlaylistOutputDTO = {
-      playlist: playlist.toBusinessModel()
-    }
-
-    return response
-  }
-
   public editPlaylist = async (
     input: EditPlaylistInputDTO
-  ): Promise<void> => {
-    const { idToEdit, token, name } = input
+  ): Promise<EditPlaylistOutputDTO> => {
+    const { name, token, idToEdit, thumbnail } = input
 
-    if (token === undefined) {
-      throw new BadRequestError("token ausente")
+    if (
+      name === undefined &&
+      thumbnail === undefined
+    ) {
+      throw new BadRequestError(
+        "ambos 'name' e 'thumbnail' ausentes, informe pelo menos um"
+      )
     }
 
     const payload = this.tokenManager.getPayload(token)
 
-    if (payload === null) {
-      throw new BadRequestError("token inválido")
+    if (!payload) {
+      throw new UnauthorizedError()
     }
 
-    if (typeof name !== "string") {
-      throw new BadRequestError("'name' deve ser string")
-    }
-
-    const playlistDB = await this.playlistDatabase.findById(idToEdit)
+    const playlistDB = await this.playlistDatabase
+      .findPlaylistById(idToEdit)
 
     if (!playlistDB) {
-      throw new NotFoundError("'id' não encontrado")
+      throw new NotFoundError("playlist com essa id não existe")
     }
 
-    const creatorId = payload.id
-
-    if (playlistDB.creator_id !== creatorId) {
-      throw new BadRequestError("somente quem criou a playlist pode editá-la")
+    if (payload.id !== playlistDB.creator_id) {
+      throw new ForbiddenError("somente quem criou a playlist pode editá-la")
     }
-
-    const creatorName = payload.name
 
     const playlist = new Playlist(
       playlistDB.id,
       playlistDB.name,
-      playlistDB.thumbnail,
       playlistDB.likes,
       playlistDB.dislikes,
       playlistDB.created_at,
       playlistDB.updated_at,
-      creatorId,
-      creatorName
+      playlistDB.creator_id,
+      payload.name,
+      playlistDB.thumbnail
     )
 
-    playlist.setName(name)
-    playlist.setUpdatedAt(new Date().toISOString())
+    name && playlist.setName(name)
+    
+    if (thumbnail) {
+      await s3.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Body: thumbnail.buffer,
+        Key: playlist.getThumbnail(),
+        ContentType: thumbnail.mimetype
+      }))
+    }
 
     const updatedPlaylistDB = playlist.toDBModel()
+    await this.playlistDatabase.updatePlaylist(updatedPlaylistDB)
 
-    await this.playlistDatabase.update(idToEdit, updatedPlaylistDB)
+    const output: EditPlaylistOutputDTO = undefined
+
+    return output
   }
 
   public deletePlaylist = async (
     input: DeletePlaylistInputDTO
-  ): Promise<void> => {
-    const { idToDelete, token } = input
-
-    if (token === undefined) {
-      throw new BadRequestError("token ausente")
-    }
+  ): Promise<DeletePlaylistOutputDTO> => {
+    const { token, idToDelete } = input
 
     const payload = this.tokenManager.getPayload(token)
 
-    if (payload === null) {
-      throw new BadRequestError("token inválido")
+    if (!payload) {
+      throw new UnauthorizedError()
     }
 
-    const playlistDB = await this.playlistDatabase.findById(idToDelete)
+    const playlistDB = await this.playlistDatabase
+      .findPlaylistById(idToDelete)
 
     if (!playlistDB) {
-      throw new NotFoundError("'id' não encontrado")
+      throw new NotFoundError("playlist com essa id não existe")
     }
 
-    const creatorId = payload.id
-
-    if (
-      payload.role !== USER_ROLES.ADMIN
-      && playlistDB.creator_id !== creatorId
-    ) {
-      throw new BadRequestError("somente quem criou a playlist pode deletá-la")
+    if (payload.role !== USER_ROLES.ADMIN) {
+      if (payload.id !== playlistDB.creator_id) {
+        throw new ForbiddenError("somente quem criou a playlist pode editá-la")
+      }
     }
 
-    await this.playlistDatabase.delete(idToDelete)
+    await this.playlistDatabase.deletePlaylistById(idToDelete)
+
+    await s3.send(new DeleteObjectCommand({
+      Bucket: bucketName,
+      Key: playlistDB.thumbnail
+    }))
+
+    const output: DeletePlaylistOutputDTO = undefined
+
+    return output
   }
 
   public likeOrDislikePlaylist = async (
     input: LikeOrDislikePlaylistInputDTO
-  ): Promise<void> => {
-    const { idToLikeOrDislike, token, like } = input
-
-    if (token === undefined) {
-      throw new BadRequestError("token ausente")
-    }
+  ): Promise<LikeOrDislikePlaylistOutputDTO> => {
+    const { token, like, playlistId } = input
 
     const payload = this.tokenManager.getPayload(token)
 
-    if (payload === null) {
-      throw new BadRequestError("token inválido")
+    if (!payload) {
+      throw new UnauthorizedError()
     }
 
-    if (typeof like !== "boolean") {
-      throw new BadRequestError("'like' deve ser boolean")
-    }
+    const playlistDBWithCreatorName =
+      await this.playlistDatabase.findPlaylistWithCreatorNameById(playlistId)
 
-    const playlistWithCreatorDB = await this.playlistDatabase
-      .findPlaylistWithCreatorById(idToLikeOrDislike)
-
-    if (!playlistWithCreatorDB) {
-      throw new NotFoundError("'id' não encontrado")
-    }
-
-    const userId = payload.id
-    const likeSQLite = like ? 1 : 0
-
-    const likeDislikeDB: LikeDislikeDB = {
-      user_id: userId,
-      playlist_id: playlistWithCreatorDB.id,
-      like: likeSQLite
+    if (!playlistDBWithCreatorName) {
+      throw new NotFoundError("playlist com essa id não existe")
     }
 
     const playlist = new Playlist(
-      playlistWithCreatorDB.id,
-      playlistWithCreatorDB.name,
-      playlistWithCreatorDB.thumbnail,
-      playlistWithCreatorDB.likes,
-      playlistWithCreatorDB.dislikes,
-      playlistWithCreatorDB.created_at,
-      playlistWithCreatorDB.updated_at,
-      playlistWithCreatorDB.creator_id,
-      playlistWithCreatorDB.creator_name
+      playlistDBWithCreatorName.id,
+      playlistDBWithCreatorName.name,
+      playlistDBWithCreatorName.likes,
+      playlistDBWithCreatorName.dislikes,
+      playlistDBWithCreatorName.created_at,
+      playlistDBWithCreatorName.updated_at,
+      playlistDBWithCreatorName.creator_id,
+      playlistDBWithCreatorName.creator_name,
+      playlistDBWithCreatorName.thumbnail
     )
 
-    const likeDislikeExists = await this.playlistDatabase
-      .findLikeDislike(likeDislikeDB)
+    const likeSQlite = like ? 1 : 0
+
+    const likeDislikeDB: LikeDislikeDB = {
+      user_id: payload.id,
+      playlist_id: playlistId,
+      like: likeSQlite
+    }
+
+    const likeDislikeExists =
+      await this.playlistDatabase.findLikeDislike(likeDislikeDB)
 
     if (likeDislikeExists === PLAYLIST_LIKE.ALREADY_LIKED) {
       if (like) {
@@ -278,23 +258,25 @@ export class PlaylistBusiness {
       }
 
     } else if (likeDislikeExists === PLAYLIST_LIKE.ALREADY_DISLIKED) {
-      if (like) {
+      if (like === false) {
+        await this.playlistDatabase.removeLikeDislike(likeDislikeDB)
+        playlist.removeDislike()
+      } else {
         await this.playlistDatabase.updateLikeDislike(likeDislikeDB)
         playlist.removeDislike()
         playlist.addLike()
-      } else {
-        await this.playlistDatabase.removeLikeDislike(likeDislikeDB)
-        playlist.removeDislike()
       }
 
     } else {
-      await this.playlistDatabase.likeOrDislikePlaylist(likeDislikeDB)
-
+      await this.playlistDatabase.insertLikeDislike(likeDislikeDB)
       like ? playlist.addLike() : playlist.addDislike()
     }
 
     const updatedPlaylistDB = playlist.toDBModel()
+    await this.playlistDatabase.updatePlaylist(updatedPlaylistDB)
 
-    await this.playlistDatabase.update(idToLikeOrDislike, updatedPlaylistDB)
+    const output: LikeOrDislikePlaylistOutputDTO = undefined
+
+    return output
   }
 }
