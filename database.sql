@@ -21,7 +21,7 @@ VALUES
 
 CREATE TABLE playlists (
     id TEXT PRIMARY KEY UNIQUE NOT NULL,
-    creator_id TEXT UNIQUE NOT NULL,
+    creator_id TEXT NOT NULL,
     name TEXT NOT NULL,
     likes INTEGER DEFAULT (0) NOT NULL,
     dislikes INTEGER DEFAULT (0) NOT NULL,
